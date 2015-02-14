@@ -1,6 +1,6 @@
 
-####Coverage Reprot
-[!report]("/coveragereport/report.JPG")
+####Coverage Report
+![report]("coveragereport/report.JPG")
 ### Test Generation with Constraints and Mocking
 
 Run `node main.js` to generate `test.js`.  The code under test is `subject.js`.
