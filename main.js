@@ -40,19 +40,36 @@ var mockFileLibrary =
 	{
 		'path/fileExists': {}
 	},
+	
 	fileWithContent:
 	{
 		pathContent: 
 		{	
   			file1: 'text content',
 		}
+	},
+	fileNoContent:
+	{
+		pathContent: 
+		{	
+  			file1: '',
+		}
 	}
+
 };
 
 function generateTestCases()
 {
 
-	var content = "var subject = require('./subject.js')\nvar mock = require('mock-fs');\n";
+	var options = undefined;
+	console.log(options);
+	console.log(options)
+	options = {};
+	options["normalize"] = true;
+	console.log(options);
+	console.log(options.normalize)
+
+	var content = "var subject = require('./subject.js')\nvar mock = require('mock-fs');\nvar faker = require('faker');\n";
 	for ( var funcName in functionConstraints )
 	{
 		var params = {};
@@ -72,18 +89,20 @@ function generateTestCases()
 		// Handle global constraints...
 		var fileWithContent = _.some(constraints, {mocking: 'fileWithContent' });
 		var pathExists      = _.some(constraints, {mocking: 'fileExists' });
-
+		var containsPhone = _.contains(functionConstraints[funcName].params, "phoneNumber");
+		console.log(containsPhone);
 		for( var c = 0; c < constraints.length; c++ )
 		{
 			var constraint = constraints[c];
 			if( params.hasOwnProperty( constraint.ident ) )
 			{
 				params[constraint.ident] = constraint.value;
+				var args = Object.keys(params).map( function(k) {return params[k]; }).join(",");
+				content += "subject.{0}({1});\n".format(funcName, args );					
 			}
 		}
 
 		// Prepare function arguments.
-		var args = Object.keys(params).map( function(k) {return params[k]; }).join(",");
 		if( pathExists || fileWithContent )
 		{
 			content += generateMockFsTestCases(pathExists,fileWithContent,funcName, args);
@@ -91,6 +110,21 @@ function generateTestCases()
 			content += generateMockFsTestCases(!pathExists,!fileWithContent,funcName, args);
 			content += generateMockFsTestCases(pathExists,!fileWithContent,funcName, args);
 			content += generateMockFsTestCases(!pathExists,fileWithContent,funcName, args);
+		}else if(containsPhone){
+			for(param in params){
+				if(param.indexOf("phoneNumber") > -1){
+					params[param] = "faker.phone.phoneNumberFormat()";
+				}
+				if(param.indexOf("options") > -1){
+					params[param] = JSON.stringify(options);
+					
+				}
+			}
+
+			args = _.map(params, function(value, key, list){
+				return value;
+			}).join(",");
+			content += "subject.{0}({1});\n".format(funcName, args ); 
 		}
 		else
 		{
@@ -114,10 +148,22 @@ function generateMockFsTestCases (pathExists,fileWithContent,funcName,args)
 	{
 		for (var attrname in mockFileLibrary.pathExists) { mergedFS[attrname] = mockFileLibrary.pathExists[attrname]; }
 	}
+	if(!pathExists && !fileWithContent)
+	{
+		for (var attrname in mockFileLibrary.pathExists) { mergedFS[attrname] = mockFileLibrary.pathExists[attrname]; }
+		
+	}
+	else
+	{
 	if( fileWithContent )
 	{
 		for (var attrname in mockFileLibrary.fileWithContent) { mergedFS[attrname] = mockFileLibrary.fileWithContent[attrname]; }
 	}
+	else
+	{
+		for (var attrname in mockFileLibrary.fileNoContent) { mergedFS[attrname] = mockFileLibrary.fileNoContent[attrname]; }
+	}
+}
 
 	testCase += 
 	"mock(" +
@@ -161,8 +207,60 @@ function constraints(filePath)
 								ident: child.left.name,
 								value: rightHand
 							});
+						if(rightHand=='undefined')
+						{
+							functionConstraints[funcName].constraints.push( 
+							{
+								ident: child.left.name,
+								value: '"somestring"'
+							});
+						}
+					}
+
+				}
+				if( child.type === 'BinaryExpression' && child.operator == "==")
+				{
+					if( child.left.type == 'Identifier' && child.left.name=="area")
+					{
+						// get expression from original source code:
+						//var expression = buf.substring(child.range[0], child.range[1]);
+					
+						var testphone = '"212-313-5151"'
+						functionConstraints[funcName].constraints.push(
+							{
+								ident: 'phoneNumber',
+								value: testphone,
+							}
+						);
+						functionConstraints[funcName].constraints.push(
+							{
+								ident: 'phoneNumber',
+								value: "'othernumber'",
+							}
+						);
 					}
 				}
+				if( child.type === 'BinaryExpression' && child.operator == "<")
+				{
+					if( child.left.type == 'Identifier' && params.indexOf( child.left.name ) > -1)
+					{
+						// get expression from original source code:
+						//var expression = buf.substring(child.range[0], child.range[1]);
+						var rightHand = buf.substring(child.right.range[0], child.right.range[1])
+						functionConstraints[funcName].constraints.push( 
+							{
+								ident: child.left.name,
+								value: child.right.value+1
+							});
+						functionConstraints[funcName].constraints.push( 
+							{
+								ident: child.left.name,
+								value: child.right.value-1
+							});
+						
+					}
+				}
+
 
 				if( child.type == "CallExpression" && 
 					 child.callee.property &&
@@ -198,12 +296,11 @@ function constraints(filePath)
 								value: "'path/fileExists'",
 								mocking: 'fileExists'
 							});
+							 
 						}
 					}
 				}
-
-			});
-
+				});
 			console.log( functionConstraints[funcName]);
 
 		}
